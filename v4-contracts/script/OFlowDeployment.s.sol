@@ -39,7 +39,7 @@ contract OFlowDeployment is Script {
     address private constant NEW_VOTING_ESCROW = 0x2e88E6FE84934C69BC1bAA601435c732874f8ded;
     address payable private constant NEW_ROUTER = payable(0x8BF3A7040299A2dFAC154a1bA310d2E38e389916);
     address private constant NEW_MINTER = 0x9052385e624FC2907a22aDD19EC63eFd46c89e43;
-    address private constant NEW_GAUGE_PLUGIN = 0x6F3103a306D606e24B8c8CeBAA3Cf2d7847401a6;
+    // address private constant NEW_GAUGE_PLUGIN = 0x6F3103a306D606e24B8c8CeBAA3Cf2d7847401a6;
     address private constant NEW_REWARDS_DISTRIBUTOR_WETH = 0x6a83589830e0c28B2E268a15cC61F3991BEedB01;
     address private constant NEW_REWARDS_DISTRIBUTOR_FLOW = 0x9753555829D421745F9F72caeEAd6a6DA32d11A1;
 
