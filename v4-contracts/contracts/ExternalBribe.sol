@@ -186,7 +186,7 @@ contract ExternalBribe is IBribe {
 
     // allows a user to claim rewards for a given token
     function getReward(uint tokenId, address[] memory tokens) external lock  {
-        require(IVotingEscrow(_ve).isApprovedOrOwner(msg.sender, tokenId));
+        require(IVotingEscrow(_ve).isApprovedOrOwner(msg.sender, tokenId) || IVotingEscrow(_ve).lastOwner(tokenId) == msg.sender);
         for (uint i = 0; i < tokens.length; i++) {
             uint _reward = earned(tokens[i], tokenId);
             lastEarn[tokens[i]][tokenId] = block.timestamp;

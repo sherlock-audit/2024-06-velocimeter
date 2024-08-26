@@ -33,7 +33,6 @@ contract OFlowDeployment is Script {
     address private constant NEW_FLOW = 0x1724BC42f8bdDc9819D6BC8e01Ea82792131D9B4;
     address private constant NEW_PAIR_FACTORY = 0xeb1d84d6C8645bA3372C560Ae1989F05B176F3D8;
     address private constant NEW_GAUGE_FACTORY = 0xeb67881f34DF55D211E694070d48afE180B77689;
-    address private constant NEW_GAUGE_PLUGIN = 0x9052385e624FC2907a22aDD19EC63eFd46c89e43;
     address private constant NEW_PROXY_GAUGE_FACTORY = 0x6Db82B7c6967370211A5d4Ff38a576D42c418147;
     address private constant NEW_VOTER = 0x74C9C4d495D5f09D28a9d34eDF79DB300B535121;
     address private constant NEW_VOTING_ESCROW = 0x2e88E6FE84934C69BC1bAA601435c732874f8ded;

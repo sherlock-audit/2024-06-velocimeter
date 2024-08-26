@@ -43,9 +43,11 @@ contract Voter is IVoter {
     mapping(uint => address[]) public poolVote; // nft => pools
     mapping(uint => uint) public usedWeights;  // nft => total voting weight of user
     mapping(uint => uint) public lastVoted; // nft => timestamp of last vote, to ensure one vote per epoch
+    mapping(uint => uint) public lastPoked; // nft => timestamp of last poke, to ensure one poke per epoch
     mapping(address => bool) public isGauge;
     mapping(address => bool) public isWhitelisted;
     mapping(address => bool) public isAlive;
+    mapping(address => bool) public isActiveGauge; // check if the gauge is count as active and incressed the total emmision
     mapping(address => bool) public isFactory; // factory  => boolean [the pair factory exists?]
     mapping(address => bool) public isGaugeFactory; // g.factory=> boolean [the gauge factory exists?]
 
@@ -152,10 +154,10 @@ contract Voter is IVoter {
         emit ExternalBribeSet(msg.sender, _gauge, _external);
     }
 
+    // pair factory and gauge factories are mapped many to many
     function addFactory(address _pairFactory, address _gaugeFactory) external onlyEmergencyCouncil {
         require(_pairFactory != address(0), 'addr 0');
         require(_gaugeFactory != address(0), 'addr 0');
-        require(!isGaugeFactory[_gaugeFactory], 'g.fact true');
 
         factories.push(_pairFactory);
         gaugeFactories.push(_gaugeFactory);
@@ -169,8 +171,7 @@ contract Voter is IVoter {
         require(_pairFactory != address(0), 'addr 0');
         require(_gaugeFactory != address(0), 'addr 0');
         require(_pos < factoryLength() && _pos < gaugeFactoriesLength(), '_pos out of range');
-        require(isFactory[_pairFactory], 'factory false');
-        require(isGaugeFactory[_gaugeFactory], 'g.fact false');
+
         address oldPF = factories[_pos];
         address oldGF = gaugeFactories[_pos];
         isFactory[oldPF] = false;
@@ -184,12 +185,11 @@ contract Voter is IVoter {
         emit FactoryReplaced(msg.sender, _pairFactory, _gaugeFactory, _pos);
     }
 
+    // if the factory is in more the one pos, that function needs to be called for all of the pos
     function removeFactory(uint256 _pos) external onlyEmergencyCouncil {
         require(_pos < factoryLength() && _pos < gaugeFactoriesLength(), '_pos out of range');
         address oldPF = factories[_pos];
         address oldGF = gaugeFactories[_pos];
-        require(isFactory[oldPF], 'factory false');
-        require(isGaugeFactory[oldGF], 'g.fact false');
         factories[_pos] = address(0);
         gaugeFactories[_pos] = address(0);
         isFactory[oldPF] = false;
@@ -232,8 +232,8 @@ contract Voter is IVoter {
     }
 
     function poke(uint _tokenId) external onlyNewEpoch(_tokenId) {
-        require(IVotingEscrow(_ve).isApprovedOrOwner(msg.sender, _tokenId) || msg.sender == governor);
-        lastVoted[_tokenId] = block.timestamp;
+        require((block.timestamp / DURATION) * DURATION > lastPoked[_tokenId], "TOKEN_ALREADY_POKED_THIS_EPOCH");
+        lastPoked[_tokenId] = block.timestamp;
 
         address[] memory _poolVote = poolVote[_tokenId];
         uint _poolCnt = _poolVote.length;
@@ -255,18 +255,19 @@ contract Voter is IVoter {
         uint256 _usedWeight = 0;
 
         for (uint i = 0; i < _poolCnt; i++) {
-            _totalVoteWeight += _weights[i];
+            address _pool = _poolVote[i];
+            address _gauge = gauges[_pool];
+            if (isAlive[_gauge]) _totalVoteWeight += _weights[i];
         }
 
         for (uint i = 0; i < _poolCnt; i++) {
             address _pool = _poolVote[i];
             address _gauge = gauges[_pool];
 
-            if (isGauge[_gauge]) {
-                require(isAlive[_gauge], "gauge already dead");
+            if (isAlive[_gauge]) {
                 uint256 _poolWeight = _weights[i] * _weight / _totalVoteWeight;
                 require(votes[_tokenId][_pool] == 0);
-                require(_poolWeight != 0);
+                if(_poolWeight == 0) continue;
                 _updateFor(_gauge);
 
                 poolVote[_tokenId].push(_pool);
@@ -385,9 +386,17 @@ contract Voter is IVoter {
         }
         require(isAlive[_gauge], "gauge already dead");
         isAlive[_gauge] = false;
-        claimable[_gauge] = 0;
+        uint256 _claimable = claimable[_gauge];
+        if (_claimable > 0) {
+             _safeTransfer(base,minter, _claimable);
+             delete claimable[_gauge];
+        }
         address _pair = IGauge(_gauge).stake(); // TODO: add test cases
         try IPair(_pair).setHasGauge(false) {} catch {}
+        if(isActiveGauge[_gauge]) {
+            activeGaugeNumber -= 1;
+            isActiveGauge[_gauge] = false;
+        }
         emit GaugePaused(_gauge);
     }
 
@@ -399,6 +408,7 @@ contract Voter is IVoter {
         }
         require(!isAlive[_gauge], "gauge already alive");
         isAlive[_gauge] = true;
+        supplyIndex[_gauge] = index;
         address _pair = IGauge(_gauge).stake(); // TODO: add test cases
         try IPair(_pair).setHasGauge(true) {} catch {}
         emit GaugeRestarted(_gauge);
@@ -408,23 +418,27 @@ contract Voter is IVoter {
         if (msg.sender != emergencyCouncil) {
             require(
                 IGaugePlugin(gaugePlugin).checkGaugeKillAllowance(msg.sender, _gauge)
-            , "Restart gauge not allowed");
+            , "Kill gauge not allowed");
         }
         require(isAlive[_gauge], "gauge already dead");
 
         address _pool = poolForGauge[_gauge];
 
+        uint256 _claimable = claimable[_gauge];
+        if (_claimable > 0) {
+             _safeTransfer(base,minter, _claimable);
+             delete claimable[_gauge];
+        }
+
         delete isAlive[_gauge];
         delete external_bribes[_gauge];
         delete poolForGauge[_gauge];
         delete isGauge[_gauge];
-        delete claimable[_gauge];
         delete supplyIndex[_gauge];
         delete gauges[_pool];
         try IPair(_pool).setHasGauge(false) {} catch {}
 
         killedGauges.push(_gauge);
-
         emit GaugeKilledTotally(_gauge);
     }
 
@@ -526,6 +540,8 @@ contract Voter is IVoter {
                 uint _share = uint(_supplied) * _delta / 1e18; // add accrued difference for each supplied token
                 if (isAlive[_gauge]) {
                     claimable[_gauge] += _share;
+                } else {
+                    _safeTransfer(base,minter,_share);
                 }
             }
         } else {
@@ -550,10 +566,12 @@ contract Voter is IVoter {
         IMinter(minter).update_period();
         _updateFor(_gauge); // should set claimable to 0 if killed
         uint _claimable = claimable[_gauge];
-        if (_claimable > IGauge(_gauge).left(base) && _claimable / DURATION > 0) {
+        isActiveGauge[_gauge] = false;
+        if (_claimable > IGauge(_gauge).left(base) && IGauge(_gauge).totalSupply() > 0 && _claimable / DURATION > 0) {
             claimable[_gauge] = 0;
             if((_claimable * 1e18) / currentEpochRewardAmount > minShareForActiveGauge) {
                 activeGaugeNumber += 1;
+                isActiveGauge[_gauge] = true;
             }
 
             IGauge(_gauge).notifyRewardAmount(base, _claimable);
@@ -585,6 +603,14 @@ contract Voter is IVoter {
         require(token.code.length > 0);
         (bool success, bytes memory data) =
         token.call(abi.encodeWithSelector(IERC20.transferFrom.selector, from, to, value));
+        require(success && (data.length == 0 || abi.decode(data, (bool))));
+    }
+
+    function _safeTransfer(address token, address to, uint256 value) internal {
+        require(token.code.length > 0);
+        (bool success, bytes memory data) = token.call(
+            abi.encodeWithSelector(IERC20.transfer.selector, to, value)
+        );
         require(success && (data.length == 0 || abi.decode(data, (bool))));
     }
 }
