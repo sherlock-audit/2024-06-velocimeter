@@ -164,6 +164,12 @@ contract OptionTokenV4 is ERC20, AccessControl {
     /// @notice expiry time
     uint256 public expiryTime;
 
+    struct SlippageParams  {
+        uint256 maxPaymentAmount;
+        uint256 maxAmountToAddLiquidity;
+        uint256 minlpAmount;
+    }
+
     struct TreasuryConfig {
         address treasury;
         uint256 fee;
@@ -280,24 +286,30 @@ contract OptionTokenV4 is ERC20, AccessControl {
     /// @dev The oracle may revert if it cannot give a secure result.
     /// @param _amount The amount of options tokens to exercise
     /// @param _maxPaymentAmount The maximum acceptable amount to pay. Used for slippage protection.
+    /// @param _maxAmountToAddLiquidity The maximum acceptable amount of payment token to be used for LP. Used for slippage protection.
+    /// @param _minlpAmount The minimu acceptable amount of lp token recived. Used for slippage protection.
     /// @param _recipient The recipient of the purchased underlying tokens
     /// @param _deadline The Unix timestamp (in seconds) after which the call will revert
     /// @return The amount paid to the treasury to purchase the underlying tokens
     function exerciseVe(
         uint256 _amount,
         uint256 _maxPaymentAmount,
+        uint256 _maxAmountToAddLiquidity,
+        uint256 _minlpAmount,
         address _recipient,
         uint256 _discount,
         uint256 _deadline
     ) external returns (uint256, uint256,uint256) {
         if (block.timestamp > _deadline) revert OptionToken_PastDeadline();
-        return _exerciseVe(_amount, _maxPaymentAmount,_discount, _recipient);
+        return _exerciseVe(_amount, SlippageParams(_maxPaymentAmount,_maxAmountToAddLiquidity,_minlpAmount),_discount, _recipient);
     }
 
     /// @notice Exercises options tokens to create LP and stake in gauges with lock.
     /// @dev The oracle may revert if it cannot give a secure result.
     /// @param _amount The amount of options tokens to exercise
     /// @param _maxPaymentAmount The maximum acceptable amount to pay. Used for slippage protection.
+    /// @param _maxAmountToAddLiquidity The maximum acceptable amount of payment token to be used for LP. Used for slippage protection.
+    /// @param _minlpAmount The minimu acceptable amount of lp token recived. Used for slippage protection.
     /// @param _discount The desired discount
     /// @param _deadline The Unix timestamp (in seconds) after which the call will revert
     /// @return The amount paid to the treasury to purchase the underlying tokens
@@ -305,12 +317,14 @@ contract OptionTokenV4 is ERC20, AccessControl {
     function exerciseLp(
         uint256 _amount,
         uint256 _maxPaymentAmount,
+        uint256 _maxAmountToAddLiquidity,
+        uint256 _minlpAmount,
         address _recipient,
         uint256 _discount,
         uint256 _deadline
     ) external returns (uint256, uint256) {
         if (block.timestamp > _deadline) revert OptionToken_PastDeadline();
-        return _exerciseLp(_amount, _maxPaymentAmount, _recipient, _discount);
+        return _exerciseLp(_amount, SlippageParams(_maxPaymentAmount,_maxAmountToAddLiquidity,_minlpAmount),_recipient, _discount);
     }
 
     /// -----------------------------------------------------------------------
@@ -349,10 +363,23 @@ contract OptionTokenV4 is ERC20, AccessControl {
     /// @param _discount The discount amount
     function getPaymentTokenAmountForExerciseLp(uint256 _amount,uint256 _discount) public view returns (uint256 paymentAmount, uint256 paymentAmountToAddLiquidity)
     {
-       
         paymentAmount = _discount == 0 ? 0 : getLpDiscountedPrice(_amount, _discount);
         (uint256 underlyingReserve, uint256 paymentReserve) = IRouter(router).getReserves(underlyingToken, paymentToken, false);
         paymentAmountToAddLiquidity = (_amount * paymentReserve) / underlyingReserve;
+    }
+
+    function getLPTokenAmountForExerciseLp(uint256 _amount) public view returns (uint256 lpAmount)
+    {
+        (uint256 underlyingReserve, uint256 paymentReserve) = IRouter(router).getReserves(underlyingToken, paymentToken, false);
+        uint paymentAmountToAddLiquidity = (_amount * paymentReserve) / underlyingReserve;
+
+        (, , lpAmount) = IRouter(router).quoteAddLiquidity(
+            underlyingToken,
+            paymentToken,
+            false,
+            _amount,
+            paymentAmountToAddLiquidity
+        );
     }
 
     function getSlopeInterceptForLpDiscount()
@@ -374,7 +401,7 @@ contract OptionTokenV4 is ERC20, AccessControl {
     ) public view returns (uint256) {
         uint256[] memory amtsOut = IPair(pair).prices(
             underlyingToken,
-            _amount,
+            1e18, // we are taking the price for one token
             twapPoints
         );
         uint256 len = amtsOut.length;
@@ -384,7 +411,9 @@ contract OptionTokenV4 is ERC20, AccessControl {
             summedAmount += amtsOut[i];
         }
 
-        return summedAmount / twapPoints;
+        summedAmount += IPair(pair).current(underlyingToken, 1e18);
+
+        return ((summedAmount * _amount) / (twapPoints + 1)) / 1e18;
     }
 
     /// -----------------------------------------------------------------------
@@ -592,7 +621,7 @@ contract OptionTokenV4 is ERC20, AccessControl {
 
     function _exerciseVe(
         uint256 _amount,
-        uint256 _maxPaymentAmount,
+        SlippageParams memory _slippageParams,
         uint256 _discount,
         address _recipient
     ) internal returns (uint256 paymentAmount, uint256 nftId,uint256 lpAmount) {
@@ -605,7 +634,7 @@ contract OptionTokenV4 is ERC20, AccessControl {
         // burn callers tokens
         _burn(msg.sender, _amount);
         (uint256 paymentAmount,uint256 paymentAmountToAddLiquidity) =  getPaymentTokenAmountForExerciseLp(_amount,_discount); // TODO decide if we want to have the curve or just always maxlock
-        if (paymentAmount > _maxPaymentAmount)
+        if (paymentAmount > _slippageParams.maxPaymentAmount || paymentAmountToAddLiquidity > _slippageParams.maxAmountToAddLiquidity)
             revert OptionToken_SlippageTooHigh();
           
         // Take team fee
@@ -634,6 +663,9 @@ contract OptionTokenV4 is ERC20, AccessControl {
             address(this),
             block.timestamp
         );
+
+        if (lpAmount < _slippageParams.minlpAmount)
+            revert OptionToken_SlippageTooHigh();
 
         // lock underlying tokens to veFLOW
         _safeApprove(address(pair), votingEscrow, lpAmount);
@@ -651,7 +683,7 @@ contract OptionTokenV4 is ERC20, AccessControl {
 
     function _exerciseLp(
         uint256 _amount,   // the oTOKEN amount the user wants to redeem with
-        uint256 _maxPaymentAmount, // the 
+        SlippageParams memory _slippageParams,
         address _recipient,
         uint256 _discount
     ) internal returns (uint256 paymentAmount, uint256 lpAmount) {
@@ -664,7 +696,7 @@ contract OptionTokenV4 is ERC20, AccessControl {
         // burn callers tokens
         _burn(msg.sender, _amount);
         (uint256 paymentAmount,uint256 paymentAmountToAddLiquidity) =  getPaymentTokenAmountForExerciseLp(_amount,_discount);
-        if (paymentAmount > _maxPaymentAmount)
+        if (paymentAmount > _slippageParams.maxPaymentAmount || paymentAmountToAddLiquidity > _slippageParams.maxAmountToAddLiquidity)
             revert OptionToken_SlippageTooHigh();
           
         // Take team fee
@@ -693,6 +725,9 @@ contract OptionTokenV4 is ERC20, AccessControl {
             address(this),
             block.timestamp
         );
+
+        if (lpAmount < _slippageParams.minlpAmount)
+            revert OptionToken_SlippageTooHigh();
 
         // Stake the LP in the gauge with lock
         address _gauge = gauge;

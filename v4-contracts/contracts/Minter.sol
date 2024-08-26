@@ -89,9 +89,9 @@ contract Minter is IMinter {
         emit EmissionPerGaugeSet(_weeklyPerGauge);
     }
 
-    // calculate circulating supply as total token supply - locked supply
+    // totalSupply of flow
     function circulating_supply() public view returns (uint) {
-        return _flow.totalSupply() - _ve.totalSupply();
+        return _flow.totalSupply();
     }
 
     // weekly emission takes the max of calculated (aka target) emission versus circulating tail end emission
@@ -116,8 +116,7 @@ contract Minter is IMinter {
             active_period = _period;
             uint256 weekly = weekly_emission();
 
-            uint _teamEmissions = (teamRate * weekly) /
-                (PRECISION - teamRate);
+            uint _teamEmissions = (teamRate * weekly) / PRECISION;
             uint _required =  weekly + _teamEmissions;
             uint _balanceOf = _flow.balanceOf(address(this));
             if (_balanceOf < _required) {

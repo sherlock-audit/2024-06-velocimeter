@@ -18,5 +18,6 @@ interface IPair {
     function hasGauge() external view returns (bool);
     function stable() external view returns (bool);
     function prices(address tokenIn, uint amountIn, uint points) external view returns (uint[] memory);
+    function current(address tokenIn, uint amountIn) external view returns (uint amountOut);
     function setVoter() external;
 }

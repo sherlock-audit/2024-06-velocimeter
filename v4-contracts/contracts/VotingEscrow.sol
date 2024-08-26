@@ -182,6 +182,9 @@ contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
     /// @dev Mapping from NFT ID to the address that owns it.
     mapping(uint => address) internal idToOwner;
 
+    /// @dev Mapping from NFT ID to the address that last owns it before burn.
+    mapping(uint => address) public lastOwner;
+
     /// @dev Mapping from owner address to count of his tokens.
     mapping(address => uint) internal ownerToNFTokenCount;
 
@@ -545,6 +548,8 @@ contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
         _moveTokenDelegates(delegates(tokenOwner), address(0), _tokenId);
         // Remove token
         _removeTokenFrom(tokenOwner, _tokenId);
+
+        lastOwner[_tokenId] = tokenOwner;
         emit Transfer(tokenOwner, address(0), _tokenId);
     }
 
@@ -824,6 +829,7 @@ contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
     /// @param _tokenId lock NFT
     /// @param _value Amount to add to user's lock
     function deposit_for(uint _tokenId, uint _value) external nonreentrant {
+        require(msg.sender == team);
         LockedBalance memory _locked = locked[_tokenId];
 
         require(_value > 0); // dev: need non-zero value
@@ -897,11 +903,12 @@ contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
         uint index =  maxLockIdToIndex[_tokenId] - 1;
         maxLockIdToIndex[_tokenId] = 0;
 
-         // Move the last element into the place to delete
-        max_locked_nfts[index] = max_locked_nfts[max_locked_nfts.length - 1];
-        
-        // update the index 
-        maxLockIdToIndex[max_locked_nfts[index]] = index + 1;
+        // Move the last element into the place to delete when the index is last we do not need to move anything
+        if (index != max_locked_nfts.length - 1) {
+             uint lastTokenId = max_locked_nfts[max_locked_nfts.length - 1];
+             max_locked_nfts[index] = lastTokenId;
+             maxLockIdToIndex[lastTokenId] = index + 1;
+        }
         
         // Remove the last element
         max_locked_nfts.pop();
@@ -1263,7 +1270,7 @@ contract VotingEscrow is IERC721, IERC721Metadata, IVotes {
 
     /// @notice A record of each accounts delegate
     mapping(address => address) private _delegates;
-    uint public constant MAX_DELEGATES = 1024; // avoid too much gas
+    uint public constant MAX_DELEGATES = 50; // avoid too much gas
 
     /// @notice A record of delegated token checkpoints for each account, by index
     mapping(address => mapping(uint32 => Checkpoint)) public checkpoints;

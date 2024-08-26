@@ -70,13 +70,11 @@ contract ExerciseVaultTest is BaseTest {
         escrow = new VotingEscrow(address(FLOW),address(flowDaiPair),address(artProxy), owners[0]);
         
         deployPairFactoryAndRouter();
+        deployMainPairWithOwner(address(owner));
         gaugePlugin = new GaugePlugin(address(FLOW), address(WETH), owners[0]);
         voter = new Voter(address(escrow), address(factory), address(gaugeFactory), address(bribeFactory), address(gaugePlugin));
         factory.setVoter(address(voter));
-        flowDaiPair = Pair(
-            factory.createPair(address(FLOW), address(DAI), false)
-        );
-       
+
         deployOptionTokenV3WithOwner(
             address(owner),
             address(gaugeFactory),
@@ -84,8 +82,13 @@ contract ExerciseVaultTest is BaseTest {
             address(escrow)
         );
         gaugeFactory.setOFlow(address(oFlowV3));
+        flowDaiPair.setVoter();
 
         gauge = GaugeV4(voter.createGauge(address(flowDaiPair), 0));
+
+        flowDaiPair.approve(address(gauge), 1e18);
+        gauge.depositFor(address(owner2), 1e18);
+
         oFlowV3.updateGauge();
         oFlowV3.setDiscount(80);
 
@@ -172,7 +175,7 @@ contract ExerciseVaultTest is BaseTest {
         uint256 daiBalanceBefore = DAI.balanceOf(address(exerciseVault));
         uint256 daiBalanceBeforeOwner2 = DAI.balanceOf(address(owner2));
 
-        assertEq(exerciseVault.getAmountOfPaymentTokensAfterExercise(address(oFlowV3),address(FLOW),address(DAI),TOKEN_1),189903102678420429);
+        assertEq(exerciseVault.getAmountOfPaymentTokensAfterExercise(address(oFlowV3),address(FLOW),address(DAI),TOKEN_1),189903108351039091);
         exerciseVault.exercise(address(oFlowV3), TOKEN_1,0);
 
         vm.stopPrank();
@@ -180,8 +183,8 @@ contract ExerciseVaultTest is BaseTest {
         uint256 daiBalanceAfter = DAI.balanceOf(address(exerciseVault));
         uint256 daiBalanceAftereOwner2 = DAI.balanceOf(address(owner2));
         
-        assertEq(daiBalanceAfter - daiBalanceBefore,9994900140969496);
-        assertEq(daiBalanceAftereOwner2 - daiBalanceBeforeOwner2,189903102678420429);
+        assertEq(daiBalanceAfter - daiBalanceBefore,9994900439528373);
+        assertEq(daiBalanceAftereOwner2 - daiBalanceBeforeOwner2,189903108351039091);
     }
 
     function testOnlyOwneCanTakeTokensBack() public {

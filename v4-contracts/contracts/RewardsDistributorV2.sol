@@ -136,7 +136,11 @@ contract RewardsDistributorV2 is IRewardsDistributor,IProxyGaugeNotify {
         uint max_user_epoch = IVotingEscrow(ve).user_point_epoch(_tokenId);
         uint epoch = _find_timestamp_user_epoch(ve, _tokenId, _timestamp, max_user_epoch);
         IVotingEscrow.Point memory pt = IVotingEscrow(ve).user_point_history(_tokenId, epoch);
-        return Math.max(uint(int256(pt.bias - pt.slope * (int128(int256(_timestamp - pt.ts))))), 0);
+
+        int balance_of_int = int256(pt.bias - pt.slope * (int128(int256(_timestamp - pt.ts))));
+        uint balance_of = balance_of_int > 0 ? uint(balance_of_int) : 0;
+
+        return balance_of;
     }
 
     function _checkpoint_total_supply() internal {
@@ -146,7 +150,7 @@ contract RewardsDistributorV2 is IRewardsDistributor,IProxyGaugeNotify {
         IVotingEscrow(ve).checkpoint();
 
         for (uint i = 0; i < 20; i++) {
-            if (t > rounded_timestamp) {
+            if (t >= rounded_timestamp) {
                 break;
             } else {
                 uint epoch = _find_timestamp_epoch(ve, t);
@@ -155,7 +159,9 @@ contract RewardsDistributorV2 is IRewardsDistributor,IProxyGaugeNotify {
                 if (t > pt.ts) {
                     dt = int128(int256(t - pt.ts));
                 }
-                ve_supply[t] = Math.max(uint(int256(pt.bias - pt.slope * dt)), 0);
+                int balance_of_int = int256(pt.bias - pt.slope * dt);
+                uint balance_of = balance_of_int > 0 ? uint(balance_of_int) : 0;
+                ve_supply[t] = balance_of;
             }
             t += WEEK;
         }
@@ -205,7 +211,8 @@ contract RewardsDistributorV2 is IRewardsDistributor,IProxyGaugeNotify {
                 }
             } else {
                 int128 dt = int128(int256(week_cursor - old_user_point.ts));
-                uint balance_of = Math.max(uint(int256(old_user_point.bias - dt * old_user_point.slope)), 0);
+                int balance_of_int = int256(old_user_point.bias - dt * old_user_point.slope);
+                uint balance_of = balance_of_int > 0 ? uint(balance_of_int) : 0;
                 if (balance_of == 0 && user_epoch > max_user_epoch) break;
                 if (balance_of != 0) {
                     to_distribute += balance_of * tokens_per_week[week_cursor] / ve_supply[week_cursor];
@@ -262,7 +269,9 @@ contract RewardsDistributorV2 is IRewardsDistributor,IProxyGaugeNotify {
                 }
             } else {
                 int128 dt = int128(int256(week_cursor - old_user_point.ts));
-                uint balance_of = Math.max(uint(int256(old_user_point.bias - dt * old_user_point.slope)), 0);
+                int balance_of_int = int256(old_user_point.bias - dt * old_user_point.slope);
+                uint balance_of = balance_of_int > 0 ? uint(balance_of_int) : 0;
+
                 if (balance_of == 0 && user_epoch > max_user_epoch) break;
                 if (balance_of != 0) {
                     to_distribute += balance_of * tokens_per_week[week_cursor] / ve_supply[week_cursor];
@@ -280,7 +289,7 @@ contract RewardsDistributorV2 is IRewardsDistributor,IProxyGaugeNotify {
     }
 
     function claim(uint _tokenId) external returns (uint) {
-        require(IVotingEscrow(voting_escrow).isApprovedOrOwner(msg.sender, _tokenId));
+        require(IVotingEscrow(voting_escrow).isApprovedOrOwner(msg.sender, _tokenId) ||  IVotingEscrow(voting_escrow).lastOwner(_tokenId) == msg.sender);
 
         if (block.timestamp >= time_cursor) _checkpoint_total_supply();
         uint _last_token_time = last_token_time;
@@ -302,7 +311,7 @@ contract RewardsDistributorV2 is IRewardsDistributor,IProxyGaugeNotify {
 
         for (uint i = 0; i < _tokenIds.length; i++) {
             uint _tokenId = _tokenIds[i];
-            require(IVotingEscrow(voting_escrow).isApprovedOrOwner(msg.sender, _tokenId));
+            require(IVotingEscrow(voting_escrow).isApprovedOrOwner(msg.sender, _tokenId) || IVotingEscrow(voting_escrow).lastOwner(_tokenId) == msg.sender);
             if (_tokenId == 0) break;
             uint amount = _claim(_tokenId, _voting_escrow, _last_token_time);
             if (amount != 0) {

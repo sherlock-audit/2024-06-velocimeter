@@ -69,12 +69,11 @@ contract OptionTokenV3Test is BaseTest {
         escrow = new VotingEscrow(address(FLOW),address(flowDaiPair), address(artProxy), owners[0]);
         
         deployPairFactoryAndRouter();
+        deployMainPairWithOwner(address(owner));
+
         gaugePlugin = new GaugePlugin(address(FLOW), address(WETH), owners[0]);
         voter = new Voter(address(escrow), address(factory), address(gaugeFactory), address(bribeFactory), address(gaugePlugin));
         factory.setVoter(address(voter));
-        flowDaiPair = Pair(
-            factory.createPair(address(FLOW), address(DAI), false)
-        );
        
         deployOptionTokenV3WithOwner(
             address(owner),
@@ -83,8 +82,13 @@ contract OptionTokenV3Test is BaseTest {
             address(escrow)
         );
         gaugeFactory.setOFlow(address(oFlowV3));
+        flowDaiPair.setVoter();
 
         gauge = GaugeV4(voter.createGauge(address(flowDaiPair), 0));
+
+        flowDaiPair.approve(address(gauge), 1e18);
+        gauge.depositFor(address(owner2), 1e18);
+
         oFlowV3.updateGauge();
     }
 
@@ -602,7 +606,7 @@ contract OptionTokenV3Test is BaseTest {
             address(owner2),
             TOKEN_1,
             discountedPrice,
-            1000000000999700046
+            1000000000993729027
         );
 
   

@@ -149,6 +149,28 @@ contract VeloVotingTest is BaseTest {
         assertGt(voter.votes(1, address(pair)), 0);
     }
 
+    function testCannotPokeMoreThenOneInTheSameEpoch() public {
+        address pair = router.pairFor(address(FRAX), address(FLOW), false);
+
+        // vote
+        vm.warp(block.timestamp + 1 weeks);
+        address[] memory pools = new address[](1);
+        pools[0] = address(pair);
+        uint256[] memory weights = new uint256[](1);
+        weights[0] = 5000;
+        voter.vote(1, pools, weights);
+
+        // fwd half epoch
+        vm.warp(block.timestamp + 3 weeks / 2);
+
+        // try poking and fail
+        voter.poke(1);
+        vm.expectRevert(abi.encodePacked("TOKEN_ALREADY_POKED_THIS_EPOCH"));
+        voter.poke(1);
+
+        voter.vote(1, pools, weights);
+    }
+
     function testCanChangeVoteOrResetInNextEpoch() public {
         address pair = router.pairFor(address(FRAX), address(FLOW), false);
 
@@ -196,5 +218,44 @@ contract VeloVotingTest is BaseTest {
         vm.startPrank(address(owner2));
         voter.vote(1, pools, weights);
         vm.stopPrank();
+    }
+
+    function testCannotChangeVoteAndPokeAndResetInSameEpochLowVote() public {
+        address pair = router.pairFor(address(FRAX), address(FLOW), false);
+        address pair1 = router.pairFor(address(FRAX), address(DAI), true);
+        // vote
+        vm.warp(block.timestamp + 1 weeks);
+        address[] memory pools = new address[](2);
+        pools[0] = address(pair);
+        pools[1] = address(pair1);
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 1;
+        weights[1] = 90000000000000000000;
+        voter.vote(1, pools, weights);
+
+        // fwd half epoch
+        vm.warp(block.timestamp + 1 weeks);
+
+        voter.poke(1);
+    }
+
+      function testPokeOnPauseGauge() public {
+        address pair = router.pairFor(address(FRAX), address(FLOW), false);
+        address pair1 = router.pairFor(address(FRAX), address(DAI), true);
+        // vote
+        vm.warp(block.timestamp + 1 weeks);
+        address[] memory pools = new address[](2);
+        pools[0] = address(pair);
+        pools[1] = address(pair1);
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 50;
+        weights[1] = 50;
+        voter.vote(1, pools, weights);
+
+        // fwd half epoch
+        vm.warp(block.timestamp + 1 weeks);
+        voter.pauseGauge(voter.gauges(pair));
+
+        voter.poke(1);
     }
 }
