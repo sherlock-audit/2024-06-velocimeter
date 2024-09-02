@@ -147,7 +147,7 @@ contract RewardsDistributor is IRewardsDistributor {
         IVotingEscrow(ve).checkpoint();
 
         for (uint i = 0; i < 20; i++) {
-            if (t > rounded_timestamp) {
+            if (t >= rounded_timestamp) {
                 break;
             } else {
                 uint epoch = _find_timestamp_epoch(ve, t);

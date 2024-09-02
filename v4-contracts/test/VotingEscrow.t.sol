@@ -99,6 +99,37 @@ contract VotingEscrowTest is BaseTest {
         escrow.disable_max_lock(2);
      }
 
+    function testEnableAndDisableMaxLock() external {
+        flowDaiPair.approve(address(escrow), TOKEN_1);
+        uint256 lockDuration = 7 * 24 * 3600; // 1 week
+        escrow.create_lock(400, lockDuration);
+        escrow.create_lock(400, lockDuration);
+        escrow.create_lock(400, lockDuration);
+
+        assertEq(escrow.currentTokenId(), 3);
+        escrow.enable_max_lock(1);
+        escrow.enable_max_lock(2);
+        escrow.enable_max_lock(3);
+
+
+        assertEq(escrow.maxLockIdToIndex(1), 1);
+        assertEq(escrow.maxLockIdToIndex(2), 2);
+        assertEq(escrow.maxLockIdToIndex(3), 3);
+
+        assertEq(escrow.max_locked_nfts(0), 1);
+        assertEq(escrow.max_locked_nfts(1), 2);
+        assertEq(escrow.max_locked_nfts(2), 3);
+
+        escrow.disable_max_lock(3);
+
+        assertEq(escrow.maxLockIdToIndex(1), 1);
+        assertEq(escrow.maxLockIdToIndex(2), 2);
+        assertEq(escrow.maxLockIdToIndex(3), 0);//mockLockIdToIndex has to be zero
+
+        assertEq(escrow.max_locked_nfts(0), 1);
+        assertEq(escrow.max_locked_nfts(1), 2);
+    }
+
     function testSplit() public {
         flowDaiPair.approve(address(escrow), 10*TOKEN_1);
         uint256 lockDuration = 7 * 24 * 3600; // 1 week

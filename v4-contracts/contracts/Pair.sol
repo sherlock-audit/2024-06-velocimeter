@@ -29,6 +29,7 @@ contract Pair is IPair {
     mapping(address => uint) public nonces;
 
     uint internal constant MINIMUM_LIQUIDITY = 10**3;
+    uint internal constant MINIMUM_K = 10 ** 10;
 
     address public immutable token0;
     address public immutable token1;
@@ -148,7 +149,9 @@ contract Pair is IPair {
     }
 
     function _sendTokenFees(address token, uint amount) internal {
-        IBribe(externalBribe).notifyRewardAmount(token, amount); // transfer fees to exBribes
+        if(amount > 0) {
+            IBribe(externalBribe).notifyRewardAmount(token, amount); // transfer fees to exBribes
+        }
         emit GaugeFees(token, amount, externalBribe);
     }
 
@@ -163,8 +166,10 @@ contract Pair is IPair {
         uint blockTimestamp = block.timestamp;
         uint timeElapsed = blockTimestamp - blockTimestampLast; // overflow is desired
         if (timeElapsed > 0 && _reserve0 != 0 && _reserve1 != 0) {
-            reserve0CumulativeLast += _reserve0 * timeElapsed;
-            reserve1CumulativeLast += _reserve1 * timeElapsed;
+            unchecked {
+                reserve0CumulativeLast += _reserve0 * timeElapsed;
+                reserve1CumulativeLast += _reserve1 * timeElapsed;
+            }
         }
 
         Observation memory _point = lastObservation();
@@ -258,6 +263,10 @@ contract Pair is IPair {
         if (_totalSupply == 0) {
             liquidity = Math.sqrt(_amount0 * _amount1) - MINIMUM_LIQUIDITY;
             _mint(address(0), MINIMUM_LIQUIDITY); // permanently lock the first MINIMUM_LIQUIDITY tokens
+            if (stable) { // reverts if the initial liquidty is not 1 to 1 or to small
+                require((_amount0 * 1e18) / decimals0 == (_amount1 * 1e18) / decimals1,"NotEqual");
+                require (_k(_amount0, _amount1) > MINIMUM_K,"stable K to low");
+            }
         } else {
             liquidity = Math.min(_amount0 * _totalSupply / _reserve0, _amount1 * _totalSupply / _reserve1);
         }

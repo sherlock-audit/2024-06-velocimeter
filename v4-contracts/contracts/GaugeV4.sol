@@ -563,6 +563,7 @@ contract GaugeV4 is IGauge {
     function notifyRewardAmount(address token, uint amount) external lock {
         require(token != stake);
         require(amount > 0);
+        require(totalSupply > 0,"no deposits");
         if (!isReward[token]) {
             require(IVoter(voter).isWhitelisted(token), "rewards tokens must be whitelisted");
             require(rewards.length < MAX_REWARD_TOKENS, "too many rewards tokens");

@@ -98,8 +98,9 @@ contract KillGaugesTest is BaseTest {
     pools[0] = address(pair);
     uint256[] memory weights = new uint256[](1);
     weights[0] = 10000;
-    vm.expectRevert(abi.encodePacked("gauge already dead"));
+
     voter.vote(1, pools, weights);
+    assertEq(voter.usedWeights(1),0);
 
     vm.expectEmit(true, false, false, true);
     emit GaugeRestarted(gaugeAddress);

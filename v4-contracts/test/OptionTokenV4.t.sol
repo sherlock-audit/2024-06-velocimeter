@@ -93,6 +93,10 @@ contract OptionTokenV4Test is BaseTest {
         flowDaiPair.setVoter();
 
         gauge = GaugeV4(voter.createGauge(address(flowDaiPair), 0));
+
+        flowDaiPair.approve(address(gauge), 1e18);
+        gauge.depositFor(address(owner2), 1e18);
+
         oFlowV4.updateGauge();
     }
 
@@ -463,8 +467,8 @@ contract OptionTokenV4Test is BaseTest {
         assertEq(flowBalanceAfter - flowBalanceBefore, TOKEN_1);
         assertEq(oFlowV4BalanceBefore - oFlowV4BalanceAfter, TOKEN_1);
         assertEq(daiBalanceBefore - daiBalanceAfter, discountedPrice);
-        assertEq(treasuryDaiBalanceAfter - treasuryDaiBalanceBefore,49499506559263702);
-        assertEq(treasuryVMDaiBalanceAfter - treasuryVMDaiBalanceBefore,49499506559263702);
+        assertEq(treasuryDaiBalanceAfter - treasuryDaiBalanceBefore,49499506562214866);
+        assertEq(treasuryVMDaiBalanceAfter - treasuryVMDaiBalanceBefore,49499506562214866);
         assertEq(
              (rewardGaugeDaiAfter - rewardGaugeDaiBalanceBefore) + (treasuryDaiBalanceAfter - treasuryDaiBalanceBefore) + (treasuryVMDaiBalanceAfter - treasuryVMDaiBalanceBefore),
              discountedPrice
@@ -557,7 +561,6 @@ contract OptionTokenV4Test is BaseTest {
         vm.stopPrank();
 
         uint256 nftBalanceBefore = escrow.balanceOf(address(owner2));
-        uint256 oFlowV4BalanceBefore = oFlowV4.balanceOf(address(owner2));
         uint256 daiBalanceBefore = DAI.balanceOf(address(owner2));
         uint256 treasuryDaiBalanceBefore = DAI.balanceOf(address(owner));
         uint256 rewardGaugeDaiBalanceBefore = DAI.balanceOf(address(gauge));
@@ -565,6 +568,7 @@ contract OptionTokenV4Test is BaseTest {
         (uint256 underlyingReserve, uint256 paymentReserve) = IRouter(router).getReserves(address(FLOW), address(DAI), false);
         uint256 paymentAmountToAddLiquidity = (TOKEN_1 * paymentReserve) /  underlyingReserve;
         uint256 discountedPrice = oFlowV4.getLpDiscountedPrice(TOKEN_1,20); //oFlowV4.getVeDiscountedPrice(TOKEN_1);
+        uint256 lpExpected = oFlowV4.getLPTokenAmountForExerciseLp(TOKEN_1);
 
         vm.startPrank(address(owner2));
         DAI.approve(address(oFlowV4), TOKEN_100K);
@@ -576,9 +580,12 @@ contract OptionTokenV4Test is BaseTest {
             discountedPrice,
             escrow.currentTokenId() + 1
         );
+
         (, uint256 nftId, ) = oFlowV4.exerciseVe(
             TOKEN_1,
             TOKEN_1,
+            paymentAmountToAddLiquidity,
+            lpExpected,
             address(owner2),
             20,
             block.timestamp
@@ -586,13 +593,11 @@ contract OptionTokenV4Test is BaseTest {
         vm.stopPrank();
 
         uint256 nftBalanceAfter = escrow.balanceOf(address(owner2));
-        uint256 oFlowV4BalanceAfter = oFlowV4.balanceOf(address(owner2));
         uint256 daiBalanceAfter = DAI.balanceOf(address(owner2));
         uint256 treasuryDaiBalanceAfter = DAI.balanceOf(address(owner));
         uint256 rewardGaugeDaiAfter = DAI.balanceOf(address(gauge));
 
         assertEq(nftBalanceAfter - nftBalanceBefore, 1);
-        assertEq(oFlowV4BalanceBefore - oFlowV4BalanceAfter, TOKEN_1);
         assertEq(daiBalanceBefore - daiBalanceAfter, discountedPrice + paymentAmountToAddLiquidity);
         assertEq(
              (rewardGaugeDaiAfter - rewardGaugeDaiBalanceBefore) + (treasuryDaiBalanceAfter - treasuryDaiBalanceBefore),
@@ -634,6 +639,8 @@ contract OptionTokenV4Test is BaseTest {
         (, uint256 nftId, ) = oFlowV4.exerciseVe(
             TOKEN_1,
             TOKEN_1,
+            paymentAmountToAddLiquidity,
+            0,
             address(owner2),
             0,
             block.timestamp
@@ -691,7 +698,9 @@ contract OptionTokenV4Test is BaseTest {
             discountedPrice,
             1000000000993729027
         );
-        oFlowV4.exerciseLp(TOKEN_1, TOKEN_1, address(owner2),20,block.timestamp);
+
+        oFlowV4.exerciseLp(TOKEN_1, TOKEN_1,paymentAmountToAddLiquidity,0,20,block.timestamp);
+
         vm.stopPrank();
 
         uint256 flowBalanceAfter = FLOW.balanceOf(address(owner2));

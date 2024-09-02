@@ -16,4 +16,11 @@ interface IRouter {
         address to,
         uint deadline
     ) external returns (uint, uint, uint);
+    function quoteAddLiquidity(
+        address tokenA,
+        address tokenB,
+        bool stable,
+        uint amountADesired,
+        uint amountBDesired
+    ) external view returns (uint amountA, uint amountB, uint liquidity);
 }

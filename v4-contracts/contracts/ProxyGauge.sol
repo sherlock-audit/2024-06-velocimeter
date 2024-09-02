@@ -15,6 +15,7 @@ contract ProxyGauge is IGauge {
     address public immutable flow;
     address public immutable notifyAddress;
     string public symbol;
+    uint public totalSupply = 1e18;
 
     // simple re-entrancy check
     uint internal _unlocked = 1;

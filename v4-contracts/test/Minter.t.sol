@@ -57,7 +57,11 @@ contract MinterTest is BaseTest {
         address pair = router.pairFor(address(FRAX), address(FLOW), false);
 
         FLOW.approve(address(voter), 5 * TOKEN_100K);
-        voter.createGauge(pair, 0);
+        address gauge = voter.createGauge(pair, 0);
+
+        Pair(pair).approve(address(gauge), 1);
+        Gauge(gauge).deposit(1,0);
+
         vm.roll(block.number + 1); // fwd 1 block because escrow.balanceOfNFT() returns 0 in same block
         assertGt(escrow.balanceOfNFT(1), 995063075414519385);
         assertEq(flowDaiPair.balanceOf(address(escrow)), TOKEN_1);
@@ -169,7 +173,10 @@ contract MinterTest is BaseTest {
         address pair1 = router.pairFor(address(FRAX), address(FLOW), false);
         address pair2 = router.pairFor(address(DAI), address(FLOW), false);
 
-        voter.createGauge(pair2, 0);
+        address gauge = voter.createGauge(pair2, 0);
+
+        Pair(pair2).approve(address(gauge), 1e18);
+        Gauge(gauge).deposit(1e18,0);
       
         assertEq(minter.weekly_emission(), 2000e18);
 
@@ -191,6 +198,40 @@ contract MinterTest is BaseTest {
         _elapseOneWeek();
         voter.distribute();
         assertEq(minter.weekly_emission(), 4000e18);
+
+    }
+
+    function testWeeklyEmissionAfterActiveGaugeChangeAndPause() public {
+        initializeVotingEscrow();
+
+        FLOW.approve(address(router), TOKEN_1);
+        FRAX.approve(address(router), TOKEN_1);
+        router.addLiquidity(address(FRAX), address(FLOW), false, TOKEN_1, TOKEN_1, 0, 0, address(owner), block.timestamp);
+        address pair1 = router.pairFor(address(FRAX), address(FLOW), false);
+        address pair2 = router.pairFor(address(DAI), address(FLOW), false);
+
+        address gaugeToPause = voter.createGauge(pair2, 0);
+
+        assertEq(minter.weekly_emission(), 2000e18);
+
+        voter.distribute();
+        assertEq(minter.weekly_emission(), 2000e18);
+        _elapseOneWeek();
+
+        address[] memory pools = new address[](2);
+        pools[0] = pair1;
+        pools[1] = pair2;
+        uint256[] memory weights = new uint256[](2);
+        weights[0] = 9899;
+        weights[1] = 101;
+        voter.vote(1, pools, weights);
+
+        voter.pauseGauge(gaugeToPause);
+        voter.distribute();
+        assertEq(minter.weekly_emission(), 2000e18);
+        _elapseOneWeek();
+        voter.distribute();
+        assertEq(minter.weekly_emission(), 2000e18);
 
     }
 
@@ -227,5 +268,60 @@ contract MinterTest is BaseTest {
     function _elapseOneWeek() private {
         vm.warp(block.timestamp + ONE_WEEK);
         vm.roll(block.number + 1);
+    }
+
+    function testPauseGaugeLeadToRemainingToken() public {
+        initializeVotingEscrow();
+
+        address gauge = voter.createGauge(address(pair),0);
+        address gauge2 = voter.createGauge(address(pair2),0);
+        address gauge3 = voter.createGauge(address(pair3),0);
+
+        Pair(pair).approve(address(gauge), 1);
+        Gauge(gauge).deposit(1,0);
+        Pair(pair2).approve(address(gauge2), 1);
+        Gauge(gauge2).deposit(1,0);
+        Pair(pair3).approve(address(gauge3), 1);
+        Gauge(gauge3).deposit(1,0);
+
+        //get voting power.
+        flowDaiPair.approve(address(escrow), 5e17);
+        uint256 tokenId = escrow.create_lock_for(1e16, FIFTY_TWO_WEEKS,address(owner));
+        uint256 tokenId2 = escrow.create_lock_for(1e16, FIFTY_TWO_WEEKS,address(owner2));
+        uint256 tokenId3 = escrow.create_lock_for(1e16, FIFTY_TWO_WEEKS,address(owner3));
+
+        skip(5 weeks);
+        vm.roll(block.number + 1);
+
+        address[] memory votePools = new address[](3);
+        votePools[0] = address(pair);
+        votePools[1] = address(pair2);
+        votePools[2] = address(pair3);
+
+        uint256[] memory weight = new uint256[](3);
+        weight[0] = 10;
+        weight[1] = 20;
+        weight[2] = 30;
+
+        //user vote.
+        vm.prank(address(owner));
+        voter.vote(tokenId,votePools,weight);
+
+        vm.prank(address(owner2));
+        voter.vote(tokenId2,votePools,weight);
+
+        vm.prank(address(owner3));
+        voter.vote(tokenId3,votePools,weight);
+
+        voter.pauseGauge(gauge3);
+        skip(8 days);
+        voter.distribute();
+
+        console2.log("gauge get flow:",FLOW.balanceOf(address(gauge)));
+        console2.log("gauge2 get flow:",FLOW.balanceOf(address(gauge2)));
+        console2.log("gauge3 get flow:",FLOW.balanceOf(address(gauge3)));
+
+        assertEq(0, FLOW.balanceOf(address(gauge3)));
+        assertEq(2,FLOW.balanceOf(address(voter)));
     }
 }
