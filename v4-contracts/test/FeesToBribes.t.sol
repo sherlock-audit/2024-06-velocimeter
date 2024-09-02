@@ -168,4 +168,34 @@ contract FeesToBribesTest is BaseTest {
         xbribe.getReward(1, rewards);
         assertGt(USDC.balanceOf(address(owner)), b);
     }
+
+    function testSwapAndClaimFees0Fee() public {
+        createLock();
+        vm.warp(block.timestamp + 1 weeks);
+
+        voter.createGauge(address(pair), 0);
+        address gaugeAddress = voter.gauges(address(pair));
+        address xBribeAddress = voter.external_bribes(gaugeAddress);
+        xbribe = ExternalBribe(xBribeAddress);
+
+        Router.route[] memory routes = new Router.route[](1);
+        routes[0] = Router.route(address(USDC), address(FRAX), true);
+
+        assertEq(
+            router.getAmountsOut(USDC_1, routes)[1],
+            pair.getAmountOut(USDC_1, address(USDC))
+        );
+
+        uint256[] memory assertedOutput = router.getAmountsOut(3e3, routes);
+        console.log("USDC Amount: ", USDC_1);
+        USDC.approve(address(router), USDC_1);
+        router.swapExactTokensForTokens(
+            3e3,
+            assertedOutput[1],
+            routes,
+            address(owner),
+            block.timestamp
+        );
+    }
+
 }
